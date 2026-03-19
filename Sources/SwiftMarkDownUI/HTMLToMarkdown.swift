@@ -55,6 +55,17 @@ enum HTMLToMarkdown {
                 let text = inlineContent(el, baseUri: baseUri)
                 out += href.isEmpty ? text : "[\(text)](\(href))"
                 needBlockSep = false
+            case "img":
+                let src = (baseUri.isEmpty ? (try? el.attr("src")) : (try? el.absUrl("src"))) ?? ""
+                let alt = ((try? el.attr("alt")) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                let label = alt.isEmpty ? "image" : alt
+                let s = src.trimmingCharacters(in: .whitespacesAndNewlines)
+                let lower = s.lowercased()
+                if !s.isEmpty {
+                    let isSVG = lower.hasPrefix("data:image/svg+xml") || lower.contains("image/svg+xml") || lower.hasSuffix(".svg")
+                    out += isSVG ? "[\(label)](\(s))" : "![\(label)](\(s))"
+                }
+                needBlockSep = false
             case "code":
                 out += "`" + inlineContent(el, baseUri: baseUri) + "`"
                 needBlockSep = false

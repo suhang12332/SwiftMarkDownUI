@@ -49,11 +49,12 @@ struct MarkupTextView: View {
 
 private enum MarkupRenderer {
     static func render(_ content: MarkupContent, baseURL: URL?) async -> String {
+        let raw: String
         switch content {
         case .markdown(let md):
-            return md
+            raw = md
         case .html(let html):
-            return HTMLToMarkdown.convert(html, baseURL: baseURL)
+            raw = HTMLToMarkdown.convert(html, baseURL: baseURL)
         case .mixed(let mixed):
             let parts = MixedSegmenter.segment(mixed)
             var mdAccum = ""
@@ -63,8 +64,42 @@ private enum MarkupRenderer {
                 case .html(let s): mdAccum += HTMLToMarkdown.convert(s, baseURL: baseURL)
                 }
             }
-            return mdAccum
+            raw = mdAccum
         }
+        return sanitizeUnsupportedImages(in: raw)
+    }
+
+    /// 将系统无法解码的图片（例如 SVG）降级为普通链接，避免触发 CGImageSource 报错。
+    private static func sanitizeUnsupportedImages(in markdown: String) -> String {
+        guard !markdown.isEmpty else { return markdown }
+
+        // 匹配：![alt](url)
+        let pattern = #"!\[([^\]]*)\]\(([^)]+)\)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
+            return markdown
+        }
+
+        let ns = markdown as NSString
+        let matches = regex.matches(in: markdown, options: [], range: NSRange(location: 0, length: ns.length))
+        guard !matches.isEmpty else { return markdown }
+
+        var out = markdown
+        for m in matches.reversed() {
+            guard m.numberOfRanges >= 3 else { continue }
+            let alt = ns.substring(with: m.range(at: 1))
+            let url = ns.substring(with: m.range(at: 2))
+            let u = url.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+            let isSVG = u.hasPrefix("data:image/svg+xml") || u.contains("image/svg+xml") || u.hasSuffix(".svg")
+            guard isSVG else { continue }
+
+            let linkText = alt.isEmpty ? "image" : alt
+            let replacement = "[\(linkText)](\(url))"
+            if let r = Range(m.range, in: out) {
+                out.replaceSubrange(r, with: replacement)
+            }
+        }
+        return out
     }
 }
 
