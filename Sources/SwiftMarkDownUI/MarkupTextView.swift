@@ -40,6 +40,10 @@ struct MarkupTextView: View {
             let newValue = await MarkupRenderer.render(content, baseURL: baseURL)
             rendered = newValue
         }
+        .onDisappear {
+            // 页面关闭时清理渲染结果，避免大文本长期占用内存
+            rendered = ""
+        }
         .textSelection(.enabled)
         .accessibilityLabel(Text("Markup Content"))
     }
