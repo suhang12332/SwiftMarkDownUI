@@ -1,231 +1,448 @@
 import Foundation
 import SwiftUI
-import MarkdownUI
+import Markdown
 
-/// 内部使用的内容类型。
 enum MarkupContent: Sendable, Equatable {
     case markdown(String)
     case html(String)
-    /// 混合内容：Markdown 文本中夹杂少量 HTML 片段（例如 `<b>`, `<br>`, `<a>` 等）。
     case mixed(String)
 }
 
-/// 内部使用的通用渲染 View，外部仅通过 `MixedMarkdownView` 访问。
+private struct InlineFlags {
+    let hasImage: Bool
+    let hasLink: Bool
+    var isTextOnly: Bool { !hasImage }
+    var needsRichRender: Bool { hasImage || hasLink }
+}
+
+private func computeFlags(_ node: Markup) -> InlineFlags {
+    var img = false
+    var lnk = false
+    if node is Markdown.Image { return InlineFlags(hasImage: true, hasLink: true) }
+    if node is Markdown.Link { lnk = true }
+    if let container = node as? InlineContainer {
+        for child in container.children {
+            let f = computeFlags(child)
+            if f.hasImage { img = true }
+            if f.hasLink { lnk = true }
+            if img && lnk { break }
+        }
+    }
+    return InlineFlags(hasImage: img, hasLink: lnk)
+}
+
 struct MarkupTextView: View {
     private let content: MarkupContent
     private let baseURL: URL?
     private let placeholder: String
 
     @State private var rendered: String = ""
+    @State private var document: Document?
 
-    public init(
-        _ content: MarkupContent,
-        baseURL: URL? = nil,
-        placeholder: String = ""
-    ) {
+    init(_ content: MarkupContent, baseURL: URL? = nil, placeholder: String = "") {
         self.content = content
         self.baseURL = baseURL
         self.placeholder = placeholder
     }
 
-    public var body: some View {
+    var body: some View {
         Group {
             if rendered.isEmpty {
-                Markdown(placeholder)
-            } else {
-                Markdown(rendered, baseURL: baseURL, imageBaseURL: nil)
+                SwiftUI.Text(placeholder)
+            } else if let doc = document {
+                MarkdownDocumentView(document: doc)
             }
         }
         .task(id: content) {
-            let newValue = await MarkupRenderer.render(content, baseURL: baseURL)
-            rendered = newValue
+            let result = await MarkupRenderer.render(content, baseURL: baseURL)
+            rendered = result
+            document = Document(parsing: result)
         }
         .onDisappear {
-            // 页面关闭时清理渲染结果，避免大文本长期占用内存
             rendered = ""
+            document = nil
         }
         .textSelection(.enabled)
-        .accessibilityLabel(Text("Markup Content"))
     }
 }
-
-// MARK: - Renderer
 
 private enum MarkupRenderer {
     static func render(_ content: MarkupContent, baseURL: URL?) async -> String {
         let raw: String
         switch content {
-        case .markdown(let md):
-            raw = md
-        case .html(let html):
-            raw = HTMLToMarkdown.convert(html, baseURL: baseURL)
-        case .mixed(let mixed):
-            let parts = MixedSegmenter.segment(mixed)
-            var mdAccum = ""
-            for part in parts {
-                switch part {
-                case .markdown(let s): mdAccum += s
-                case .html(let s): mdAccum += HTMLToMarkdown.convert(s, baseURL: baseURL)
-                }
-            }
-            raw = mdAccum
+        case .markdown(let md): raw = md
+        case .html(let html): raw = H2MD.convert(html)
+        case .mixed(let mixed): raw = H2MD.convert(mixed)
         }
         return sanitizeUnsupportedImages(in: raw)
     }
 
-    /// 将系统无法解码的图片（例如 SVG）降级为普通链接，避免触发 CGImageSource 报错。
     private static func sanitizeUnsupportedImages(in markdown: String) -> String {
         guard !markdown.isEmpty else { return markdown }
+        guard markdown.contains("!") else { return markdown }
 
-        // 匹配：![alt](url)
-        let pattern = #"!\[([^\]]*)\]\(([^)]+)\)"#
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
-            return markdown
-        }
+        var result = markdown
+        var searchStart = result.startIndex
 
-        let ns = markdown as NSString
-        let matches = regex.matches(in: markdown, options: [], range: NSRange(location: 0, length: ns.length))
-        guard !matches.isEmpty else { return markdown }
+        while searchStart < result.endIndex {
+            guard let bangRange = result.range(of: "![", range: searchStart..<result.endIndex) else { break }
+            guard let bracketRange = result.range(of: "](", range: bangRange.upperBound..<result.endIndex) else { break }
+            guard let parenRange = result.range(of: ")", range: bracketRange.upperBound..<result.endIndex) else { break }
 
-        var out = markdown
-        for m in matches.reversed() {
-            guard m.numberOfRanges >= 3 else { continue }
-            let alt = ns.substring(with: m.range(at: 1))
-            let url = ns.substring(with: m.range(at: 2))
-            let u = url.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let altStr = String(result[bangRange.upperBound..<bracketRange.lowerBound])
+            let urlStr = String(result[bracketRange.upperBound..<parenRange.lowerBound])
+            let urlLower = urlStr.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
-            let isSVG = u.hasPrefix("data:image/svg+xml") || u.contains("image/svg+xml") || u.hasSuffix(".svg")
-            guard isSVG else { continue }
+            let isSVG = urlLower.hasSuffix(".svg")
+                || urlLower.hasPrefix("data:image/svg+xml")
+                || urlLower.contains("image/svg+xml")
 
-            let linkText = alt.isEmpty ? "image" : alt
-            let replacement = "[\(linkText)](\(url))"
-            if let r = Range(m.range, in: out) {
-                out.replaceSubrange(r, with: replacement)
-            }
-        }
-        return out
-    }
-}
-
-// MARK: - Mixed segmenter (very lightweight)
-
-private enum MixedSegmenter {
-    enum Part: Sendable {
-        case markdown(String)
-        case html(String)
-    }
-
-    static func segment(_ s: String) -> [Part] {
-        // 简单状态机：识别 `<tag ...> ... </tag>` 或自闭合 `<br/>`
-        // 注意：这不是完整 HTML 解析器，只用于“混合里夹少量 HTML”的常见场景。
-        var parts: [Part] = []
-        parts.reserveCapacity(8)
-
-        var buffer = ""
-        buffer.reserveCapacity(min(s.count, 1024))
-
-        var i = s.startIndex
-        while i < s.endIndex {
-            if s[i] == "<", let tagRange = consumeTagBlock(from: i, in: s) {
-                // flush markdown buffer
-                if !buffer.isEmpty {
-                    parts.append(.markdown(buffer))
-                    buffer.removeAll(keepingCapacity: true)
-                }
-                parts.append(.html(String(s[tagRange])))
-                i = tagRange.upperBound
+            if isSVG {
+                let linkText = altStr.isEmpty ? "image" : altStr
+                let replacement = "[\(linkText)](\(urlStr))"
+                result.replaceSubrange(bangRange.lowerBound...parenRange.upperBound, with: replacement)
+                searchStart = result.index(bangRange.lowerBound, offsetBy: replacement.count)
             } else {
-                buffer.append(s[i])
-                i = s.index(after: i)
+                searchStart = parenRange.upperBound
             }
         }
-
-        if !buffer.isEmpty {
-            parts.append(.markdown(buffer))
-        }
-        return coalesce(parts)
-    }
-
-    private static func consumeTagBlock(from start: String.Index, in s: String) -> Range<String.Index>? {
-        guard s[start] == "<" else { return nil }
-
-        // 解析起始标签，拿到标签名、是否自闭合以及起始标签范围
-        guard let (tagName, startTagRange, selfClosing) = parseStartTag(from: start, in: s) else {
-            return nil
-        }
-        if selfClosing {
-            return startTagRange
-        }
-
-        // 查找对应的结束标签，若未找到则认为不是合法片段
-        let searchStart = startTagRange.upperBound
-        let closingToken = "</\(tagName)>"
-        guard let closingRange = s.range(of: closingToken, range: searchStart..<s.endIndex) else {
-            return nil
-        }
-
-        return start..<closingRange.upperBound
-    }
-
-    private static func parseStartTag(from start: String.Index, in s: String) -> (name: String, range: Range<String.Index>, selfClosing: Bool)? {
-        // 形如：<tag ...> 或 <tag .../>
-        guard s[start] == "<" else { return nil }
-        var i = s.index(after: start)
-
-        // 读取标签名（字母数字组合）
-        var nameStart = i
-        while i < s.endIndex, s[i].isLetter || s[i].isNumber {
-            i = s.index(after: i)
-        }
-        let nameRange = nameStart..<i
-        guard !nameRange.isEmpty else { return nil }
-        let name = String(s[nameRange])
-
-        // 跳过属性直到遇到 '>'
-        var sawNonSpace = false
-        var selfClosing = false
-        while i < s.endIndex {
-            let ch = s[i]
-            if ch == ">" {
-                let end = s.index(after: i)
-                let range = start..<end
-                return (name, range, selfClosing)
-            }
-            if ch == "/" {
-                // 检查是否为自闭合的 "/>"
-                if let next = s.index(i, offsetBy: 1, limitedBy: s.index(before: s.endIndex)), next < s.endIndex, s[next] == ">" {
-                    let end = s.index(after: next)
-                    let range = start..<end
-                    return (name, range, true)
-                }
-            }
-            if ch == "\n" { return nil }
-            if !ch.isWhitespace { sawNonSpace = true }
-            i = s.index(after: i)
-        }
-        return nil
-    }
-
-    private static func coalesce(_ parts: [Part]) -> [Part] {
-        guard !parts.isEmpty else { return [] }
-        var out: [Part] = []
-        out.reserveCapacity(parts.count)
-
-        var current = parts[0]
-        for p in parts.dropFirst() {
-            switch (current, p) {
-            case (.markdown(let a), .markdown(let b)):
-                current = .markdown(a + b)
-            case (.html(let a), .html(let b)):
-                current = .html(a + b)
-            default:
-                out.append(current)
-                current = p
-            }
-        }
-        out.append(current)
-        return out
+        return result
     }
 }
 
+private struct MarkdownDocumentView: View {
+    let document: Document
 
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(document.children.enumerated()), id: \.offset) { _, child in
+                BlockNodeView(node: child)
+            }
+        }
+    }
+}
+
+private struct BlockNodeView: View {
+    let node: Markup
+    var body: some View {
+        if let h = node as? Heading {
+            HeadingView(heading: h)
+        } else if let p = node as? Paragraph {
+            ParagraphView(paragraph: p)
+        } else if let cb = node as? CodeBlock {
+            CodeBlockView(codeBlock: cb)
+        } else if let bq = node as? BlockQuote {
+            BlockQuoteView(blockQuote: bq)
+        } else if let ul = node as? UnorderedList {
+            ListView(items: Array(ul.children), ordered: false)
+        } else if let ol = node as? OrderedList {
+            ListView(items: Array(ol.children), ordered: true)
+        } else if let table = node as? Markdown.Table {
+            TableView(table: table)
+        } else if node is ThematicBreak {
+            Divider().padding(.vertical, 8)
+        } else if let hb = node as? HTMLBlock {
+            SwiftUI.Text(hb.format()).font(.body).padding(.vertical, 4)
+        } else {
+            SwiftUI.Text(node.format()).font(.body).padding(.vertical, 2)
+        }
+    }
+}
+
+private struct HeadingView: View {
+    let heading: Heading
+    var body: some View {
+        InlineRichView(container: heading)
+            .font(headingFont)
+            .bold()
+            .padding(.top, heading.level <= 2 ? 16 : 8)
+    }
+    private var headingFont: Font {
+        switch heading.level {
+        case 1: return .largeTitle
+        case 2: return .title
+        case 3: return .title2
+        case 4: return .title3
+        case 5: return .headline
+        default: return .subheadline
+        }
+    }
+}
+
+private struct ParagraphView: View {
+    let paragraph: Paragraph
+    var body: some View {
+        InlineRichView(container: paragraph)
+            .font(.body)
+    }
+}
+
+private struct CodeBlockView: View {
+    let codeBlock: CodeBlock
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let lang = codeBlock.language {
+                SwiftUI.Text(lang).font(.caption).foregroundStyle(.secondary)
+                    .padding(.horizontal, 12).padding(.top, 8)
+            }
+            SwiftUI.Text(codeBlock.code)
+                .font(.system(.body, design: .monospaced))
+                .textSelection(.enabled).padding(12)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.gray.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .padding(.vertical, 6)
+    }
+}
+
+private struct BlockQuoteView: View {
+    let blockQuote: BlockQuote
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(blockQuote.children.enumerated()), id: \.offset) { _, child in
+                BlockNodeView(node: child)
+            }
+        }
+        .padding(.leading, 16)
+        .overlay(alignment: .leading) {
+            Rectangle().fill(Color.accentColor).frame(width: 3)
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+private struct TableView: View {
+    let table: Markdown.Table
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 0) {
+                TableHeaderView(row: table.head)
+                Divider()
+                ForEach(Array(table.body.children.enumerated()), id: \.offset) { _, row in
+                    if let tr = row as? Markdown.Table.Row {
+                        TableRowDataView(row: tr)
+                    }
+                }
+            }
+            .border(Color.gray.opacity(0.3))
+        }
+        .padding(.vertical, 6)
+    }
+}
+
+private struct TableHeaderView: View {
+    let row: any _TableRowProtocol
+    var body: some View {
+        HStack(alignment: .top, spacing: 0) {
+            ForEach(Array(row.cells.enumerated()), id: \.offset) { _, cell in
+                InlineRichView(container: cell)
+                    .font(.subheadline.bold())
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(6)
+            }
+        }
+        .background(Color.gray.opacity(0.15))
+        Divider()
+    }
+}
+
+private struct TableRowDataView: View {
+    let row: Markdown.Table.Row
+    var body: some View {
+        HStack(alignment: .top, spacing: 0) {
+            ForEach(Array(row.cells.enumerated()), id: \.offset) { _, cell in
+                InlineRichView(container: cell)
+                    .font(.subheadline)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(6)
+            }
+        }
+        Divider()
+    }
+}
+
+private struct ListView: View {
+    let items: [Markup]
+    let ordered: Bool
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                if let li = item as? ListItem {
+                    HStack(alignment: .top, spacing: 6) {
+                        SwiftUI.Text(ordered ? "\(index + 1)." : "\u{2022}")
+                            .font(.body).monospacedDigit()
+                        VStack(alignment: .leading, spacing: 0) {
+                            ForEach(Array(li.children.enumerated()), id: \.offset) { _, child in
+                                BlockNodeView(node: child)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.leading, 8).padding(.vertical, 2)
+    }
+}
+
+private func buildAttributedString(from container: InlineContainer) -> AttributedString {
+    var result = AttributedString()
+    for child in container.children {
+        result += buildAttrString(from: child)
+    }
+    return result
+}
+
+private func buildAttrString(from node: Markup) -> AttributedString {
+    if let t = node as? Markdown.Text {
+        return AttributedString(t.string)
+    } else if let b = node as? Strong {
+        var inner = buildAttrStringFromContainer(b)
+        inner.font = .bold(.body)()
+        return inner
+    } else if let i = node as? Emphasis {
+        var inner = buildAttrStringFromContainer(i)
+        inner.font = .italic(.body)()
+        return inner
+    } else if let s = node as? Strikethrough {
+        var inner = buildAttrStringFromContainer(s)
+        inner.strikethroughStyle = .single
+        return inner
+    } else if let code = node as? InlineCode {
+        var attr = AttributedString(code.code)
+        attr.font = .monospaced(.body)()
+        attr.backgroundColor = Color.gray.opacity(0.15)
+        return attr
+    } else if let link = node as? Markdown.Link {
+        var inner = buildAttrStringFromContainer(link)
+        inner.foregroundColor = .blue
+        inner.underlineStyle = .single
+        if let dest = link.destination, let url = URL(string: dest) {
+            inner.link = url
+        }
+        return inner
+    } else if let container = node as? InlineContainer {
+        return buildAttrStringFromContainer(container)
+    } else {
+        return AttributedString(node.format())
+    }
+}
+
+private func buildAttrStringFromContainer(_ container: InlineContainer) -> AttributedString {
+    var result = AttributedString()
+    for child in container.children {
+        result += buildAttrString(from: child)
+    }
+    return result
+}
+
+private func buildText(from node: Markup) -> SwiftUI.Text {
+    if let t = node as? Markdown.Text {
+        return SwiftUI.Text(t.string)
+    } else if let b = node as? Strong {
+        return buildTextFromContainer(b).bold()
+    } else if let i = node as? Emphasis {
+        return buildTextFromContainer(i).italic()
+    } else if let s = node as? Strikethrough {
+        return buildTextFromContainer(s).strikethrough()
+    } else if let code = node as? InlineCode {
+        return SwiftUI.Text(code.code).font(.system(.body, design: .monospaced))
+    } else if let link = node as? Markdown.Link {
+        return buildTextFromContainer(link).foregroundColor(.blue).underline()
+    } else if let container = node as? InlineContainer {
+        return buildTextFromContainer(container)
+    } else {
+        return SwiftUI.Text(node.format())
+    }
+}
+
+private func buildTextFromContainer(_ container: InlineContainer) -> SwiftUI.Text {
+    var result = SwiftUI.Text("")
+    for child in container.children {
+        result = result + buildText(from: child)
+    }
+    return result
+}
+
+private struct InlineRichView: View {
+    let container: any InlineContainer
+
+    var body: some View {
+        let flags = computeFlags(container)
+        if !flags.needsRichRender {
+            buildTextFromContainer(container)
+        } else if flags.hasImage {
+            InlineRichMixedView(container: container)
+        } else {
+            SwiftUI.Text(buildAttributedString(from: container))
+        }
+    }
+}
+
+private struct InlineRichMixedView: View {
+    let container: any InlineContainer
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(Array(container.children.enumerated()), id: \.offset) { _, node in
+                InlineNodeOrView(node: node)
+            }
+        }
+    }
+}
+
+private struct InlineNodeOrView: View {
+    let node: Markup
+    var body: some View {
+        let flags = computeFlags(node)
+        if !flags.needsRichRender {
+            buildText(from: node)
+        } else if let img = node as? Markdown.Image, let src = img.source {
+            NetworkImageView(src: src, alt: img.plainText)
+        } else if let link = node as? Markdown.Link {
+            if let dest = link.destination, let url = URL(string: dest) {
+                Link(destination: url) {
+                    InlineRichView(container: link).foregroundColor(.blue)
+                }
+            } else {
+                InlineRichView(container: link).foregroundColor(.blue)
+            }
+        } else if let container = node as? InlineContainer {
+            InlineRichView(container: container)
+        } else {
+            SwiftUI.Text(node.format())
+        }
+    }
+}
+
+private struct NetworkImageView: View {
+    let src: String
+    let alt: String
+
+    var body: some View {
+        let imageURL = URL(string: src)
+        AsyncImage(url: imageURL) { phase in
+            switch phase {
+            case .success(let image):
+                image
+                    .resizable()
+                    .interpolation(.none)
+                    .aspectRatio(contentMode: .fit)
+            case .failure:
+                SwiftUI.Text("[\(alt)](\(src))").foregroundColor(.red)
+            default:
+                ProgressView().controlSize(.small)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .clipped()
+        .onDisappear {
+            if let url = imageURL {
+                DispatchQueue.global(qos: .utility).async {
+                    let request = URLRequest(url: url)
+                    URLCache.shared.removeCachedResponse(for: request)
+                }
+            }
+        }
+    }
+}
