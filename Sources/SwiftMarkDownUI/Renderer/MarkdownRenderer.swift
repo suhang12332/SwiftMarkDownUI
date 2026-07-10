@@ -1,8 +1,12 @@
 import SwiftUI
 
-private struct MarkdownImageView: View {
+private struct MarkdownImageView: View, Equatable {
     let source: String
     let alt: String
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.source == rhs.source && lhs.alt == rhs.alt
+    }
 
     var body: some View {
         if let url = URL(string: source) {
@@ -15,21 +19,38 @@ private struct MarkdownImageView: View {
 struct MarkdownRenderer: View {
     let blocks: [BlockNode]
 
+    private let paragraphAnalysis: [Int: InlineRenderer.Analysis]
+
+    init(blocks: [BlockNode]) {
+        self.blocks = blocks
+        var cache: [Int: InlineRenderer.Analysis] = [:]
+        for (i, block) in blocks.enumerated() {
+            if case .paragraph(let inlines) = block {
+                cache[i] = InlineRenderer.analyze(inlines)
+            }
+        }
+        self.paragraphAnalysis = cache
+    }
+
     var body: some View {
-        LazyVStack(alignment: .leading, spacing: 12) {
-            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-                renderBlock(block)
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
+                renderBlock(block, index: index)
             }
         }
     }
 
     @ViewBuilder
-    private func renderBlock(_ block: BlockNode) -> some View {
+    private func renderBlock(_ block: BlockNode, index: Int) -> some View {
         switch block {
         case .heading(let level, let inlines):
             HeadingView(level: level, inlines: inlines)
         case .paragraph(let inlines):
-            renderParagraph(inlines)
+            if let analysis = paragraphAnalysis[index] {
+                renderParagraph(inlines, analysis: analysis)
+            } else {
+                renderParagraph(inlines, analysis: InlineRenderer.analyze(inlines))
+            }
         case .codeBlock(let language, let code):
             CodeBlockView(language: language, code: code)
         case .blockquote(let children):
@@ -46,9 +67,7 @@ struct MarkdownRenderer: View {
     }
 
     @ViewBuilder
-    private func renderParagraph(_ inlines: [InlineNode]) -> some View {
-        let analysis = InlineRenderer.analyze(inlines)
-
+    private func renderParagraph(_ inlines: [InlineNode], analysis: InlineRenderer.Analysis) -> some View {
         if analysis.hasImages {
             let hasText = analysis.nonImageText.contains { hasVisibleText($0) }
 

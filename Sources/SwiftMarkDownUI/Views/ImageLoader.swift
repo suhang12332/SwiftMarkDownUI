@@ -2,13 +2,19 @@ import SwiftUI
 
 struct TimeoutAsyncImage: View {
     let url: URL
-    @State private var loaded = false
-    @State private var failed = false
-    @State private var timedOut = false
+
+    private enum LoadState {
+        case active
+        case done
+        case failed
+        case timedOut
+    }
+
+    @State private var loadState: LoadState = .active
 
     var body: some View {
         Group {
-            if failed || timedOut {
+            if loadState == .failed || loadState == .timedOut {
                 EmptyView()
             } else {
                 AsyncImage(url: url) { phase in
@@ -18,10 +24,10 @@ struct TimeoutAsyncImage: View {
                             .resizable()
                             .interpolation(.none)
                             .scaledToFit()
-                            .onAppear { loaded = true }
+                            .onAppear { loadState = .done }
                     case .failure:
                         EmptyView()
-                            .onAppear { failed = true }
+                            .onAppear { loadState = .failed }
                     case .empty:
                         ProgressView()
                             .controlSize(.small)
@@ -33,20 +39,16 @@ struct TimeoutAsyncImage: View {
             }
         }
         .task(id: url) {
-            loaded = false
-            failed = false
-            timedOut = false
+            loadState = .active
             do {
                 try await Task.sleep(for: .seconds(10))
-                if !loaded && !failed {
-                    timedOut = true
+                if loadState == .active {
+                    loadState = .timedOut
                 }
             } catch {}
         }
         .onDisappear {
-            loaded = false
-            failed = false
-            timedOut = false
+            loadState = .active
         }
     }
 }

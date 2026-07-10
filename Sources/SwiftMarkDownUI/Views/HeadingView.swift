@@ -1,8 +1,12 @@
 import SwiftUI
 
-struct HeadingView: View {
+struct HeadingView: View, Equatable {
     let level: Int
     let inlines: [InlineNode]
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.level == rhs.level && lhs.inlines == rhs.inlines
+    }
 
     private var font: Font {
         switch level {
