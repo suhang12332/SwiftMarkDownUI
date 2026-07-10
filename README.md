@@ -1,8 +1,8 @@
 ## SwiftMarkDownUI
 
-SwiftMarkDownUI 是一个 Swift Package，用于在 SwiftUI 里展示 Markdown / HTML / 混合内容：
+SwiftMarkDownUI 是一个纯 Swift Package，用于在 SwiftUI 里展示 Markdown / HTML / 混合内容：
 
-- 底层使用 [`MarkdownUI`](https://github.com/gonzalezreal/swift-markdown-ui)，兼容 GitHub Flavored Markdown（GFM）
+- 使用 [swift-markdown](https://github.com/swiftlang/swift-markdown) 解析 Markdown AST，自行渲染为 SwiftUI 视图
 - 对于 `<b>` / `<strong>` / `<br>` / `<a>` 等 **轻量 HTML 片段**，通过内置 C 库 `h2md` 转成 Markdown 后统一渲染
 - 对外只暴露一个简单 API：**`MixedMarkdownView`**
 
@@ -18,22 +18,15 @@ MixedMarkdownView("**bold** and <b>HTML bold</b>")
 
 ## Architecture
 
-- `h2md` (C) — HTML → Markdown conversion
-- `MarkdownUI` — Markdown rendering via SwiftUI `Markdown` view
+- `C_h2md` (C) — HTML → Markdown 转换
+- `Markdown` (Apple swift-markdown) — Markdown 解析为 AST
+- `InlineRenderer` / `MarkdownRenderer` — 将 AST 渲染为 SwiftUI 视图（Heading、Paragraph、CodeBlock、List、Table、Blockquote 等）
 
 ## Build
 
 ```bash
 swift build
 ```
-
-### 参考项目（依赖与致谢）
-
-本项目基于以下开源库进行封装，非常感谢原作者的工作：
-
-- [MarkdownUI](https://github.com/gonzalezreal/swift-markdown-ui) —— 提供 SwiftUI 环境下的 Markdown 渲染能力
-
----
 
 ### License
 
