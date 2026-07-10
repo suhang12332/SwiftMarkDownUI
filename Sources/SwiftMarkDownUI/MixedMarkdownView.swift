@@ -1,19 +1,17 @@
 import Foundation
 import SwiftUI
-import MarkdownUI
 
 public struct MixedMarkdownView: View {
-    @State private var markdown: String
+    @State private var document: MarkdownDocument
 
     public init(_ content: String) {
-        _markdown = State(initialValue: H2MD.convert(content))
+        let markdown = H2MD.convert(content)
+        _document = State(initialValue: MarkdownDocument(parsing: markdown))
     }
 
     public var body: some View {
-        Markdown(markdown)
+        MarkdownRenderer(blocks: document.blocks)
+            .padding(.vertical, 4)
             .textSelection(.enabled)
-            .onDisappear {
-                markdown = ""
-            }
     }
 }
