@@ -114,6 +114,7 @@ enum {
     TAG_IFRAME, TAG_VIDEO, TAG_EMBED, TAG_OBJECT,
     TAG_UL, TAG_OL, TAG_LI,
     TAG_BLOCKQUOTE, TAG_TABLE, TAG_TR, TAG_TH, TAG_TD,
+    TAG_CENTER, TAG_DETAILS, TAG_SUMMARY,
 };
 
 #define TAG_TABLE_SIZE 64
@@ -139,6 +140,7 @@ static const tag_entry tag_table_data[] = {
     {"blockquote", TAG_BLOCKQUOTE, 10},
     {"table", TAG_TABLE, 5}, {"tr", TAG_TR, 2},
     {"th", TAG_TH, 2}, {"td", TAG_TD, 2},
+    {"center", TAG_CENTER, 6}, {"details", TAG_DETAILS, 7}, {"summary", TAG_SUMMARY, 7},
 };
 
 #define NUM_TAG_ENTRIES (sizeof(tag_table_data) / sizeof(tag_table_data[0]))
@@ -452,7 +454,7 @@ static void process_open_tag(h2md_parser *p) {
         p->need_blocksep = 1;
         return;
     }
-    case TAG_P: case TAG_DIV:
+    case TAG_P: case TAG_DIV: case TAG_CENTER: case TAG_DETAILS: case TAG_SUMMARY:
         ensure_blocksep(p);
         p->need_blocksep = 1;
         return;
@@ -587,7 +589,7 @@ static void process_close_tag(h2md_parser *p) {
         ensure_newline(p);
         p->need_blocksep = 1;
         return;
-    case TAG_P: case TAG_DIV:
+    case TAG_P: case TAG_DIV: case TAG_CENTER: case TAG_DETAILS: case TAG_SUMMARY:
         ensure_newline(p);
         p->need_blocksep = 1;
         return;

@@ -8,7 +8,7 @@ public enum H2MD {
             guard let result = h2md_convert(cStr) else { return html }
             let swiftString = String(cString: result)
             h2md_free(result)
-            return swiftString
+            return swiftString.trimmingCharacters(in: .whitespacesAndNewlines)
         }
     }
 

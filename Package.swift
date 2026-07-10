@@ -14,7 +14,7 @@ let package = Package(
             targets: ["SwiftMarkDownUI"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/swiftlang/swift-markdown.git", from: "0.8.0"),
+        .package(url: "https://github.com/gonzalezreal/swift-markdown-ui.git", from: "2.0.0"),
     ],
     targets: [
         .target(
@@ -28,7 +28,7 @@ let package = Package(
             name: "SwiftMarkDownUI",
             dependencies: [
                 "C_h2md",
-                .product(name: "Markdown", package: "swift-markdown"),
+                .product(name: "MarkdownUI", package: "swift-markdown-ui"),
             ]),
         .testTarget(
             name: "C_h2mdTests",

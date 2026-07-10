@@ -1,6 +1,6 @@
 # SwiftMarkDownUI
 
-SwiftUI Markdown/HTML rendering via C converter + swift-markdown parser.
+SwiftUI Markdown/HTML rendering via C converter + [MarkdownUI](https://github.com/gonzalezreal/swift-markdown-ui).
 
 ## Usage
 
@@ -12,9 +12,8 @@ MixedMarkdownView("**bold** and <b>HTML bold</b>")
 
 ## Architecture
 
-- `h2md` (C) — HTML → Markdown conversion (197 MB/s)
-- `swift-markdown` — Markdown AST parser
-- Custom SwiftUI renderer
+- `h2md` (C) — HTML → Markdown conversion
+- `MarkdownUI` — Markdown rendering via SwiftUI `Markdown` view
 
 ## Build
 
