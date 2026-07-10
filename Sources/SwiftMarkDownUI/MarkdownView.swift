@@ -5,7 +5,7 @@ public struct MarkdownView: View {
     let markdown: String
 
     @State private var blocks: [BlockNode] = []
-    @State private var debounceTask: Task<Void, Never>?
+    @State private var lastParsed: String = ""
 
     public init(_ markdown: String) {
         self.markdown = markdown
@@ -16,28 +16,18 @@ public struct MarkdownView: View {
             .padding(.vertical, 4)
             .textSelection(.enabled)
             .onChange(of: markdown) { newValue in
-                debounceParse(newValue)
+                guard newValue != lastParsed else { return }
+                lastParsed = newValue
+                blocks = ASTConverter.convert(Document(parsing: newValue))
             }
             .onAppear {
-                parse(markdown)
+                guard markdown != lastParsed else { return }
+                lastParsed = markdown
+                blocks = ASTConverter.convert(Document(parsing: markdown))
             }
             .onDisappear {
-                debounceTask?.cancel()
                 blocks = []
+                lastParsed = ""
             }
-    }
-
-    private func debounceParse(_ text: String) {
-        debounceTask?.cancel()
-        debounceTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 50_000_000)
-            guard !Task.isCancelled else { return }
-            parse(text)
-        }
-    }
-
-    private func parse(_ text: String) {
-        let doc = Document(parsing: text)
-        blocks = ASTConverter.convert(doc)
     }
 }

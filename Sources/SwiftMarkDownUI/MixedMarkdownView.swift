@@ -6,7 +6,7 @@ public struct MixedMarkdownView: View {
     let content: String
 
     @State private var blocks: [BlockNode] = []
-    @State private var debounceTask: Task<Void, Never>?
+    @State private var lastParsed: String = ""
 
     public init(_ content: String) {
         self.content = content
@@ -17,29 +17,20 @@ public struct MixedMarkdownView: View {
             .padding(.vertical, 4)
             .textSelection(.enabled)
             .onChange(of: content) { newValue in
-                debounceParse(newValue)
+                guard newValue != lastParsed else { return }
+                lastParsed = newValue
+                let md = H2MD.convert(newValue)
+                blocks = ASTConverter.convert(Document(parsing: md))
             }
             .onAppear {
-                parse(content)
+                guard content != lastParsed else { return }
+                lastParsed = content
+                let md = H2MD.convert(content)
+                blocks = ASTConverter.convert(Document(parsing: md))
             }
             .onDisappear {
-                debounceTask?.cancel()
                 blocks = []
+                lastParsed = ""
             }
-    }
-
-    private func debounceParse(_ text: String) {
-        debounceTask?.cancel()
-        debounceTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 50_000_000)
-            guard !Task.isCancelled else { return }
-            parse(text)
-        }
-    }
-
-    private func parse(_ text: String) {
-        let markdown = H2MD.convert(text)
-        let doc = Document(parsing: markdown)
-        blocks = ASTConverter.convert(doc)
     }
 }
