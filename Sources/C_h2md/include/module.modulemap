@@ -1,0 +1,4 @@
+module C_h2md {
+    umbrella header "h2md.h"
+    export *
+}

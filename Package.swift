@@ -1,5 +1,4 @@
 // swift-tools-version: 6.1
-// The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import PackageDescription
 
@@ -15,15 +14,24 @@ let package = Package(
             targets: ["SwiftMarkDownUI"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/scinfu/SwiftSoup.git", from: "2.6.0"),
-        .package(url: "https://github.com/gonzalezreal/swift-markdown-ui.git", from: "2.0.2"),
+        .package(url: "https://github.com/gonzalezreal/swift-markdown-ui.git", from: "2.0.0"),
     ],
     targets: [
         .target(
+            name: "C_h2md",
+            path: "Sources/C_h2md",
+            publicHeadersPath: "include",
+            cSettings: [
+                .headerSearchPath("include"),
+            ]),
+        .target(
             name: "SwiftMarkDownUI",
             dependencies: [
-                "SwiftSoup",
+                "C_h2md",
                 .product(name: "MarkdownUI", package: "swift-markdown-ui"),
             ]),
+        .testTarget(
+            name: "C_h2mdTests",
+            dependencies: ["C_h2md"]),
     ]
 )
