@@ -2,8 +2,6 @@ import SwiftUI
 
 struct InlineRenderer {
 
-    // MARK: - Render to AttributedString
-
     static func render(_ nodes: [InlineNode]) -> AttributedString {
         var result = AttributedString()
         for node in nodes {
@@ -48,8 +46,6 @@ struct InlineRenderer {
         case .softBreak: result.append(AttributedString(" "))
         }
     }
-
-    // MARK: - Single-pass analysis (replaces 3 separate traversals)
 
     struct Analysis {
         var hasImages = false

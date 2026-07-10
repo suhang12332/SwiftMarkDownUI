@@ -1,26 +1,25 @@
-import Foundation
 import Markdown
 import SwiftUI
 
-public struct MixedMarkdownView: View {
-    let content: String
+public struct MarkdownView: View {
+    let markdown: String
 
     @State private var blocks: [BlockNode] = []
     @State private var debounceTask: Task<Void, Never>?
 
-    public init(_ content: String) {
-        self.content = content
+    public init(_ markdown: String) {
+        self.markdown = markdown
     }
 
     public var body: some View {
         MarkdownRenderer(blocks: blocks)
             .padding(.vertical, 4)
             .textSelection(.enabled)
-            .onChange(of: content) { newValue in
+            .onChange(of: markdown) { newValue in
                 debounceParse(newValue)
             }
             .onAppear {
-                parse(content)
+                parse(markdown)
             }
             .onDisappear {
                 debounceTask?.cancel()
@@ -38,8 +37,7 @@ public struct MixedMarkdownView: View {
     }
 
     private func parse(_ text: String) {
-        let markdown = H2MD.convert(text)
-        let doc = Document(parsing: markdown)
+        let doc = Document(parsing: text)
         blocks = ASTConverter.convert(doc)
     }
 }

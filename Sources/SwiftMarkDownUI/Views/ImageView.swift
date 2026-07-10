@@ -4,8 +4,16 @@ struct InlineImageView: View {
     let source: String
     let alt: String
 
+    private var sanitizedURL: URL? {
+        let cleaned = source
+            .replacingOccurrences(of: "https: //", with: "https://")
+            .replacingOccurrences(of: "http: //", with: "http://")
+            .trimmingCharacters(in: .whitespaces)
+        return URL(string: cleaned)
+    }
+
     var body: some View {
-        if let url = URL(string: source) {
+        if let url = sanitizedURL {
             AsyncImage(url: url) { phase in
                 switch phase {
                 case .success(let image):

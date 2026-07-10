@@ -2,14 +2,10 @@ import Markdown
 
 struct ASTConverter {
 
-    // MARK: - Block Visitor
-
     private struct BlockVisitor: MarkupVisitor {
         typealias Result = BlockNode?
 
-        mutating func defaultVisit(_ markup: any Markup) -> BlockNode? {
-            nil
-        }
+        mutating func defaultVisit(_ markup: any Markup) -> BlockNode? { nil }
 
         mutating func visitHeading(_ heading: Heading) -> BlockNode? {
             .heading(level: heading.level, inlines: collectInlineChildren(heading))
@@ -48,9 +44,7 @@ struct ASTConverter {
             return .table(
                 headers: table.head.cells.map(\.plainText),
                 alignments: alignments,
-                rows: table.body.rows.map { row in
-                    row.cells.map(\.plainText)
-                }
+                rows: table.body.rows.map { row in row.cells.map(\.plainText) }
             )
         }
 
@@ -59,8 +53,6 @@ struct ASTConverter {
         mutating func visitHTMLBlock(_ html: HTMLBlock) -> BlockNode? { .html(html.rawHTML) }
 
         mutating func visitDocument(_: Document) -> BlockNode? { nil }
-
-        // MARK: - Helpers
 
         private mutating func collectInlineChildren(_ container: any InlineContainer) -> [InlineNode] {
             var v = InlineVisitor()
@@ -79,8 +71,6 @@ struct ASTConverter {
             return .list(ordered: ordered, items: items)
         }
     }
-
-    // MARK: - Inline Visitor
 
     private struct InlineVisitor: MarkupVisitor {
         typealias Result = [InlineNode]
@@ -115,8 +105,6 @@ struct ASTConverter {
 
         mutating func visitSoftBreak(_: SoftBreak) -> [InlineNode] { [.softBreak] }
 
-        // MARK: - Helpers
-
         private mutating func collectInlineChildren(_ container: any InlineContainer) -> [InlineNode] {
             var result = [InlineNode]()
             for child in container.inlineChildren {
@@ -125,8 +113,6 @@ struct ASTConverter {
             return result
         }
     }
-
-    // MARK: - Public
 
     static func convert(_ document: Document) -> [BlockNode] {
         var visitor = BlockVisitor()

@@ -5,8 +5,7 @@ import PackageDescription
 let package = Package(
     name: "SwiftMarkDownUI",
     platforms: [
-        .macOS(.v14),
-        .iOS(.v15)
+        .macOS(.v14)
     ],
     products: [
         .library(

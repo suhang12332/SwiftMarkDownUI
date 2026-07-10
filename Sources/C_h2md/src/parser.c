@@ -309,6 +309,7 @@ static void append_text_decoded(h2md_parser *p, const char *s, int len) {
 }
 
 /* Single-pass attribute extraction for all common attributes */
+static void sanitize_url(char *url, int *len);
 static void extract_all_attrs(h2md_parser *p) {
     const char *attrs = p->attr_buf;
     int alen = p->attr_len;
@@ -327,23 +328,25 @@ static void extract_all_attrs(h2md_parser *p) {
         int *out_len = NULL;
         int max_out = 0;
 
-        if (attrs[i] == 'h' && i + 3 < alen &&
+        int prev_is_word = (i > 0 && isalnum((unsigned char)attrs[i-1]));
+
+        if (!prev_is_word && attrs[i] == 'h' && i + 3 < alen &&
             tolower((unsigned char)attrs[i+1]) == 'r' &&
             tolower((unsigned char)attrs[i+2]) == 'e' &&
             tolower((unsigned char)attrs[i+3]) == 'f') {
             out = p->href; out_len = &p->href_len; max_out = (int)sizeof(p->href);
             i += 4;
-        } else if (attrs[i] == 's' && i + 2 < alen &&
+        } else if (!prev_is_word && attrs[i] == 's' && i + 2 < alen &&
                    tolower((unsigned char)attrs[i+1]) == 'r' &&
                    tolower((unsigned char)attrs[i+2]) == 'c') {
             out = p->src; out_len = &p->src_len; max_out = (int)sizeof(p->src);
             i += 3;
-        } else if (attrs[i] == 'a' && i + 2 < alen &&
+        } else if (!prev_is_word && attrs[i] == 'a' && i + 2 < alen &&
                    tolower((unsigned char)attrs[i+1]) == 'l' &&
                    tolower((unsigned char)attrs[i+2]) == 't') {
             out = p->alt; out_len = &p->alt_len; max_out = (int)sizeof(p->alt);
             i += 3;
-        } else if (attrs[i] == 'c' && i + 4 < alen &&
+        } else if (!prev_is_word && attrs[i] == 'c' && i + 4 < alen &&
                    tolower((unsigned char)attrs[i+1]) == 'l' &&
                    tolower((unsigned char)attrs[i+2]) == 'a' &&
                    tolower((unsigned char)attrs[i+3]) == 's' &&
@@ -386,9 +389,35 @@ static void extract_all_attrs(h2md_parser *p) {
                         out[(*out_len)++] = attrs[i++];
                 }
                 out[*out_len] = '\0';
+                if (out == p->href || out == p->src) {
+                    sanitize_url(out, out_len);
+                }
             }
         }
     }
+}
+
+static void sanitize_url(char *url, int *len) {
+    int w = 0;
+    for (int r = 0; r < *len; r++) {
+        if (r + 7 < *len &&
+            url[r] == 'h' && url[r+1] == 't' && url[r+2] == 't' && url[r+3] == 'p' &&
+            url[r+4] == 's' && url[r+5] == ':' && url[r+6] == ' ' && url[r+7] == '/') {
+            url[w++] = 'h'; url[w++] = 't'; url[w++] = 't'; url[w++] = 'p';
+            url[w++] = 's'; url[w++] = ':'; url[w++] = '/';
+            r += 7;
+        } else if (r + 6 < *len &&
+                   url[r] == 'h' && url[r+1] == 't' && url[r+2] == 't' && url[r+3] == 'p' &&
+                   url[r+4] == ':' && url[r+5] == ' ' && url[r+6] == '/') {
+            url[w++] = 'h'; url[w++] = 't'; url[w++] = 't'; url[w++] = 'p';
+            url[w++] = ':'; url[w++] = '/';
+            r += 6;
+        } else {
+            url[w++] = url[r];
+        }
+    }
+    url[w] = '\0';
+    *len = w;
 }
 
 static int has_gif_ext(const char *s, int len) {
