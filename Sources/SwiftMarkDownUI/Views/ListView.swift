@@ -1,9 +1,14 @@
 import SwiftUI
 
+/// A view that renders a Markdown ordered or unordered list.
+///
+/// Supports nested lists with automatic indentation, task list checkboxes,
+/// and circular/square bullets for nested unordered lists.
 struct ListView: View {
     let ordered: Bool
     let items: [ListItemNode]
 
+    /// Bullet characters used for unordered lists at increasing nesting depths.
     private let bullets = ["•", "◦", "■"]
 
     var body: some View {
@@ -22,6 +27,7 @@ struct ListView: View {
     }
 }
 
+/// A single row within a list, handling the bullet/number prefix and nested content.
 private struct ListItemRow: View {
     let ordered: Bool
     let index: Int
@@ -32,16 +38,19 @@ private struct ListItemRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 5) {
             if let completed = item.taskCompleted {
+                // Task list item: render a checkbox icon.
                 Image(systemName: completed ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(completed ? Color.accentColor : .secondary)
                     .font(.system(size: 12))
                     .offset(y: 2)
             } else if ordered {
+                // Ordered list: render the item number.
                 Text("\(index + 1).")
                     .font(.body)
                     .foregroundStyle(.primary)
                     .frame(minWidth: 18, alignment: .trailing)
             } else {
+                // Unordered list: cycle through bullet characters by depth.
                 Text(bullets[min(depth, bullets.count - 1)])
                     .font(.body)
                     .foregroundStyle(.primary)
@@ -55,6 +64,7 @@ private struct ListItemRow: View {
                         MarkdownTextView(nodes: inlines)
                     .font(.body)
                     case .list(let childOrdered, let childItems):
+                        // Recursively render nested lists with increased depth.
                         ListView(ordered: childOrdered, items: childItems)
                     default:
                         MarkdownRenderer(blocks: [block])

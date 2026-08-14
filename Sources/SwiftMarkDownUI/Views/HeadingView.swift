@@ -1,5 +1,14 @@
 import SwiftUI
 
+/// A view that renders a Markdown heading at the appropriate font size and weight.
+///
+/// The heading level (1–6) maps to SwiftUI's built-in text styles:
+/// - Level 1: `.largeTitle` bold
+/// - Level 2: `.title` bold
+/// - Level 3: `.title2` bold
+/// - Level 4: `.title3` bold
+/// - Level 5: `.headline`
+/// - Level 6 and above: `.subheadline`
 struct HeadingView: View, Equatable {
     let level: Int
     let inlines: [InlineNode]
@@ -8,6 +17,7 @@ struct HeadingView: View, Equatable {
         lhs.level == rhs.level && lhs.inlines == rhs.inlines
     }
 
+    /// The font style for this heading based on its level.
     private var font: Font {
         switch level {
         case 1: return .largeTitle.bold()
@@ -19,6 +29,7 @@ struct HeadingView: View, Equatable {
         }
     }
 
+    /// The foreground color, with deeper headings using secondary color.
     private var foregroundColor: Color {
         level <= 4 ? .primary : .secondary
     }

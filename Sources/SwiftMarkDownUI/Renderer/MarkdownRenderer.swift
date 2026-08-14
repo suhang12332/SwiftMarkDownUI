@@ -1,5 +1,10 @@
 import SwiftUI
 
+/// The main view responsible for rendering a parsed Markdown document.
+///
+/// `MarkdownRenderer` takes an array of ``BlockNode`` values (produced by ``ASTConverter``)
+/// and renders each one as the appropriate SwiftUI view. It pre-analyzes paragraphs
+/// to detect images, enabling them to be rendered as separate rows below text content.
 private struct MarkdownImageView: View, Equatable {
     let source: String
     let alt: String
@@ -19,10 +24,15 @@ private struct MarkdownImageView: View, Equatable {
 struct MarkdownRenderer: View {
     let blocks: [BlockNode]
 
+    /// Pre-computed paragraph analysis results, keyed by block index.
+    ///
+    /// This cache avoids redundant analysis passes when paragraphs are rendered,
+    /// since each paragraph's image/text separation is computed once during init.
     private let paragraphAnalysis: [Int: InlineRenderer.Analysis]
 
     init(blocks: [BlockNode]) {
         self.blocks = blocks
+        // Pre-analyze all paragraphs to separate images from text content.
         var cache: [Int: InlineRenderer.Analysis] = [:]
         for (i, block) in blocks.enumerated() {
             if case .paragraph(let inlines) = block {
@@ -40,6 +50,7 @@ struct MarkdownRenderer: View {
         }
     }
 
+    /// Renders a single block node as the corresponding SwiftUI view.
     @ViewBuilder
     private func renderBlock(_ block: BlockNode, index: Int) -> some View {
         switch block {
@@ -66,6 +77,10 @@ struct MarkdownRenderer: View {
         }
     }
 
+    /// Renders a paragraph, handling the special case where images are present.
+    ///
+    /// When a paragraph contains images, they are rendered as separate rows below
+    /// any non-image text content, rather than inline with the text.
     @ViewBuilder
     private func renderParagraph(_ inlines: [InlineNode], analysis: InlineRenderer.Analysis) -> some View {
         if analysis.hasImages {
@@ -88,6 +103,10 @@ struct MarkdownRenderer: View {
         }
     }
 
+    /// Determines whether an inline node contains any visible text content.
+    ///
+    /// Used to avoid rendering an empty text row when a paragraph consists only
+    /// of images.
     private func hasVisibleText(_ node: InlineNode) -> Bool {
         switch node {
         case .text(let s): return !s.trimmingCharacters(in: .whitespaces).isEmpty
