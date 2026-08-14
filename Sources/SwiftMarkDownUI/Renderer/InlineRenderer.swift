@@ -1,7 +1,17 @@
 import SwiftUI
 
+/// Renders an array of ``InlineNode`` values into a styled `AttributedString`.
+///
+/// `InlineRenderer` performs a recursive walk over inline nodes, applying
+/// typographic styles (bold, italic, strikethrough, code, links) as it builds
+/// the final attributed string. It also provides analysis utilities for
+/// separating image nodes from text content.
 struct InlineRenderer {
 
+    /// Renders an array of inline nodes into a single `AttributedString`.
+    ///
+    /// - Parameter nodes: The inline nodes to render.
+    /// - Returns: A fully styled attributed string.
     static func render(_ nodes: [InlineNode]) -> AttributedString {
         var result = AttributedString()
         for node in nodes {
@@ -10,6 +20,17 @@ struct InlineRenderer {
         return result
     }
 
+    /// Recursively renders a single inline node, appending styled content to the result.
+    ///
+    /// Each node type applies its own typographic attributes:
+    /// - `.text`: plain text, no special styling.
+    /// - `.code`: monospaced caption font with accent color.
+    /// - `.emphasis`: italic variant of the current font.
+    /// - `.strong`: bold variant of the current font.
+    /// - `.strikethrough`: adds a single strikethrough style.
+    /// - `.link`: blue foreground with underline and URL binding.
+    /// - `.image`: ignored (images are handled at the block level).
+    /// - `.lineBreak` / `.softBreak`: inserted as newline or space respectively.
     private static func render(_ node: InlineNode, into result: inout AttributedString) {
         switch node {
         case .text(let text):
@@ -47,12 +68,28 @@ struct InlineRenderer {
         }
     }
 
+    // MARK: - Analysis
+
+    /// The result of analyzing a list of inline nodes for image content.
     struct Analysis {
+
+        /// Whether the node list contains at least one image.
         var hasImages = false
+
+        /// All image nodes found in the list, in document order.
         var images: [(source: String, alt: String)] = []
+
+        /// Non-image inline nodes, with image children stripped from containers.
         var nonImageText: [InlineNode] = []
     }
 
+    /// Analyzes a list of inline nodes to separate image content from text content.
+    ///
+    /// This is used by ``MarkdownRenderer`` to render images as separate view rows
+    /// within a paragraph, rather than inline with text.
+    ///
+    /// - Parameter nodes: The inline nodes to analyze.
+    /// - Returns: An ``Analysis`` result containing separated images and text.
     static func analyze(_ nodes: [InlineNode]) -> Analysis {
         var a = Analysis()
         for node in nodes {
@@ -61,6 +98,11 @@ struct InlineRenderer {
         return a
     }
 
+    /// Recursively analyzes a single node, appending results to the analysis.
+    ///
+    /// Image nodes are collected separately. Container nodes (emphasis, strong,
+    /// strikethrough, link) have their image children filtered out before being
+    /// added to `nonImageText`.
     private static func analyzeNode(_ node: InlineNode, into a: inout Analysis) {
         switch node {
         case .image(let source, let alt):
@@ -72,6 +114,7 @@ struct InlineRenderer {
             a.nonImageText.append(node)
         case .link(let d, let t, let c):
             a.hasImages = a.hasImages || c.contains { isImageNode($0) }
+            // Strip image children from the link's non-image text representation.
             let filtered = c.filter { !isImageNode($0) }
             a.nonImageText.append(.link(destination: d, title: t, children: filtered))
             for child in c { analyzeNode(child, into: &a) }
@@ -80,6 +123,7 @@ struct InlineRenderer {
         }
     }
 
+    /// Returns whether the given node is an image node.
     private static func isImageNode(_ node: InlineNode) -> Bool {
         if case .image = node { return true }
         return false

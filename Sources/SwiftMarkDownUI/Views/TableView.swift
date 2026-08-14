@@ -1,5 +1,9 @@
 import SwiftUI
 
+/// A view that renders a Markdown table with headers, rows, and column alignment.
+///
+/// Displays a bordered table with a header row (semibold weight) and data rows.
+/// Column dividers are drawn between cells using `Divider` overlays.
 struct TableView: View {
     let headers: [String]
     let alignments: [TextAlignment]
@@ -25,6 +29,7 @@ struct TableView: View {
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
     }
 
+    /// The header row, rendered with semibold weight and a subtle background.
     private var headerRow: some View {
         HStack(spacing: 0) {
             ForEach(Array(headers.enumerated()), id: \.offset) { index, header in
@@ -39,6 +44,7 @@ struct TableView: View {
         }
     }
 
+    /// Renders a single data row.
     private func dataRow(_ row: [String]) -> some View {
         HStack(spacing: 0) {
             ForEach(Array(row.enumerated()), id: \.offset) { index, cell in
@@ -53,6 +59,7 @@ struct TableView: View {
         .overlay(alignment: .top) { Divider() }
     }
 
+    /// Renders a single cell with the given font weight and column alignment.
     private func cellText(_ text: String, weight: Font.Weight, alignment index: Int) -> some View {
         Text(text)
             .font(.footnote.weight(weight))
@@ -63,6 +70,7 @@ struct TableView: View {
             .frame(maxWidth: .infinity, alignment: cellAlignment(index))
     }
 
+    /// Maps the stored ``TextAlignment`` to a SwiftUI `Alignment` for the given column index.
     private func cellAlignment(_ index: Int) -> Alignment {
         guard index < alignments.count else { return .leading }
         switch alignments[index] {

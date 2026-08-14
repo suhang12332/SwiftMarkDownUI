@@ -1,7 +1,15 @@
 import Markdown
 
+/// Converts an Apple `swift-markdown` `Document` AST into the internal ``BlockNode`` representation.
+///
+/// This converter uses the visitor pattern provided by the `MarkupVisitor` protocol
+/// to walk the markdown AST and produce a flat list of ``BlockNode`` values that
+/// can be rendered by ``MarkdownRenderer``.
 struct ASTConverter {
 
+    // MARK: - Block-Level Visitor
+
+    /// Visitor that traverses block-level Markdown elements and produces ``BlockNode`` values.
     private struct BlockVisitor: MarkupVisitor {
         typealias Result = BlockNode?
 
@@ -33,6 +41,7 @@ struct ASTConverter {
         }
 
         mutating func visitTable(_ table: Table) -> BlockNode? {
+            // Map the Markdown column alignments to our internal TextAlignment type.
             let alignments = table.columnAlignments.map { alignment -> TextAlignment in
                 switch alignment {
                 case .left:   return .left
@@ -54,11 +63,15 @@ struct ASTConverter {
 
         mutating func visitDocument(_: Document) -> BlockNode? { nil }
 
+        /// Collects all inline children of a block-level container into ``InlineNode`` values.
         private mutating func collectInlineChildren(_ container: any InlineContainer) -> [InlineNode] {
             var v = InlineVisitor()
             return Array(container.inlineChildren.flatMap { v.visit($0) })
         }
 
+        /// Converts a sequence of `ListItem` markup elements into a ``BlockNode.list``.
+        ///
+        /// Each list item is recursively visited to handle nested blocks and task list checkboxes.
         private mutating func convertListItems(_ listItems: LazyMapSequence<MarkupChildren, ListItem>, ordered: Bool) -> BlockNode? {
             var items = [ListItemNode]()
             for item in listItems {
@@ -72,6 +85,9 @@ struct ASTConverter {
         }
     }
 
+    // MARK: - Inline-Level Visitor
+
+    /// Visitor that traverses inline Markdown elements and produces ``InlineNode`` values.
     private struct InlineVisitor: MarkupVisitor {
         typealias Result = [InlineNode]
 
@@ -105,6 +121,7 @@ struct ASTConverter {
 
         mutating func visitSoftBreak(_: SoftBreak) -> [InlineNode] { [.softBreak] }
 
+        /// Recursively collects inline children from a container, flattening nested inline elements.
         private mutating func collectInlineChildren(_ container: any InlineContainer) -> [InlineNode] {
             var result = [InlineNode]()
             for child in container.inlineChildren {
@@ -114,6 +131,12 @@ struct ASTConverter {
         }
     }
 
+    // MARK: - Public Interface
+
+    /// Converts a parsed `Document` into an array of ``BlockNode`` values.
+    ///
+    /// - Parameter document: The parsed Markdown document.
+    /// - Returns: An array of block nodes representing the document's top-level content.
     static func convert(_ document: Document) -> [BlockNode] {
         var visitor = BlockVisitor()
         return document.children.compactMap { visitor.visit($0) }
