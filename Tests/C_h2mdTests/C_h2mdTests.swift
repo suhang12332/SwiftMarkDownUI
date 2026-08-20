@@ -33,6 +33,23 @@ final class C_h2mdTests: XCTestCase {
         h2md_free(r)
     }
 
+    func testHTMLControlsAndIgnoredContent() {
+        let input = "<p>Block one<br>Block two</p><button data-url=\"https://example.com/download\">Download</button><script>alert('x')</script><style>body{color:red}</style>"
+        let result = String(cString: h2md_convert(input))
+        XCTAssertTrue(result.contains("Block one  \nBlock two"))
+        XCTAssertTrue(result.contains("[Download](https://example.com/download)"))
+        XCTAssertFalse(result.contains("alert"))
+        XCTAssertFalse(result.contains("color:red"))
+    }
+
+    func testTableMarkdown() {
+        let input = "<table><tr><th>Loader</th><th>Version</th></tr><tr><td>Fabric</td><td>1.21</td></tr></table>"
+        let result = String(cString: h2md_convert(input))
+        XCTAssertTrue(result.contains("| Loader | Version |"))
+        XCTAssertTrue(result.contains("| --- | --- |"))
+        XCTAssertTrue(result.contains("| Fabric | 1.21 |"))
+    }
+
     func testImages() {
         let r = h2md_convert("<img src=\"http://img.png\" alt=\"alt\">")!
         XCTAssertTrue(String(cString: r).contains("![alt](http://img.png)"))
@@ -41,8 +58,16 @@ final class C_h2mdTests: XCTestCase {
 
     func testSVGImages() {
         let r = h2md_convert("<img src=\"icon.svg\" alt=\"icon\">")!
-        XCTAssertTrue(String(cString: r).contains("[icon](icon.svg)"))
+        XCTAssertTrue(String(cString: r).contains("![icon](icon.svg)"))
         h2md_free(r)
+    }
+
+    func testNativeHTMLBlocks() {
+        let input = "<svg width=\"10\" height=\"10\"><rect width=\"10\" height=\"10\" /></svg><details><summary>Advanced</summary><p>Extra</p></details>"
+        let result = String(cString: h2md_convert(input))
+        XCTAssertTrue(result.contains("<svg width=\"10\" height=\"10\">") )
+        XCTAssertTrue(result.contains("<details><summary>Advanced</summary><p>Extra</p></details>"))
+        XCTAssertFalse(result.contains("[SVG]"))
     }
 
     func testCode() {
