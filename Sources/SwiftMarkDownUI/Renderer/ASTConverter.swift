@@ -61,8 +61,6 @@ struct ASTConverter {
 
         mutating func visitHTMLBlock(_ html: HTMLBlock) -> BlockNode? { .html(html.rawHTML) }
 
-        mutating func visitDocument(_: Document) -> BlockNode? { nil }
-
         /// Collects all inline children of a block-level container into ``InlineNode`` values.
         private mutating func collectInlineChildren(_ container: any InlineContainer) -> [InlineNode] {
             var v = InlineVisitor()

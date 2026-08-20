@@ -25,7 +25,7 @@ struct ListView: View {
                     ordered: ordered,
                     index: index,
                     item: item,
-                    depth: 0,
+                    depth: depth,
                     bullets: bullets,
                 )
             }

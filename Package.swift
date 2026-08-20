@@ -11,9 +11,6 @@ let package = Package(
         .library(
             name: "SwiftMarkDownUI",
             targets: ["SwiftMarkDownUI"]),
-        .library(
-            name: "C_h2md",
-            targets: ["C_h2md"]),
     ],
     dependencies: [
         .package(url: "https://github.com/swiftlang/swift-markdown.git", from: "0.6.0"),
