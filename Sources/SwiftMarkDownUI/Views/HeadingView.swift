@@ -9,13 +9,9 @@ import SwiftUI
 /// - Level 4: `.title3` bold
 /// - Level 5: `.headline`
 /// - Level 6 and above: `.subheadline`
-struct HeadingView: View, Equatable {
+struct HeadingView: View {
     let level: Int
     let inlines: [InlineNode]
-
-    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.level == rhs.level && lhs.inlines == rhs.inlines
-    }
 
     /// The font style for this heading based on its level.
     private var font: Font {

@@ -3,11 +3,10 @@ import SwiftUI
 /// The main view responsible for rendering a parsed Markdown document.
 ///
 /// `MarkdownRenderer` takes an array of ``BlockNode`` values (produced by ``ASTConverter``)
-/// and renders each one as the appropriate SwiftUI view. It pre-analyzes paragraphs
-/// to detect images, enabling them to be rendered as separate rows below text content.
-private struct MarkdownImageView: View, Equatable {
+/// and renders each one as the appropriate SwiftUI view. Paragraphs are split into
+/// segments so images can be rendered as separate rows while preserving text order.
+private struct MarkdownImageView: View {
     let source: String
-    let alt: String
     let destination: String?
 
     var body: some View {
@@ -31,44 +30,22 @@ private struct MarkdownImageView: View, Equatable {
 struct MarkdownRenderer: View {
     let blocks: [BlockNode]
 
-    /// Pre-computed paragraph analysis results, keyed by block index.
-    ///
-    /// This cache avoids redundant analysis passes when paragraphs are rendered,
-    /// since each paragraph's image/text separation is computed once during init.
-    private let paragraphAnalysis: [Int: InlineRenderer.Analysis]
-
-    init(blocks: [BlockNode]) {
-        self.blocks = blocks
-        // Pre-analyze all paragraphs to preserve text and image order.
-        var cache: [Int: InlineRenderer.Analysis] = [:]
-        for (i, block) in blocks.enumerated() {
-            if case let .paragraph(inlines) = block {
-                cache[i] = InlineRenderer.analyze(inlines)
-            }
-        }
-        paragraphAnalysis = cache
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
-                renderBlock(block, index: index)
+            ForEach(blocks.indices, id: \.self) { index in
+                renderBlock(blocks[index])
             }
         }
     }
 
     /// Renders a single block node as the corresponding SwiftUI view.
     @ViewBuilder
-    private func renderBlock(_ block: BlockNode, index: Int) -> some View {
+    private func renderBlock(_ block: BlockNode) -> some View {
         switch block {
         case let .heading(level, inlines):
             HeadingView(level: level, inlines: inlines)
         case let .paragraph(inlines):
-            if let analysis = paragraphAnalysis[index] {
-                renderParagraph(inlines, analysis: analysis)
-            } else {
-                renderParagraph(inlines, analysis: InlineRenderer.analyze(inlines))
-            }
+            renderParagraph(inlines)
         case let .codeBlock(language, code):
             CodeBlockView(language: language, code: code)
         case let .blockquote(children):
@@ -86,21 +63,22 @@ struct MarkdownRenderer: View {
 
     /// Renders a paragraph while preserving the source order of text and images.
     @ViewBuilder
-    private func renderParagraph(_ inlines: [InlineNode], analysis: InlineRenderer.Analysis) -> some View {
-        if analysis.hasImages {
+    private func renderParagraph(_ inlines: [InlineNode]) -> some View {
+        let segments = InlineRenderer.segments(inlines)
+        if segments.contains(where: \.isImage) {
             VStack(alignment: .leading, spacing: 8) {
-                ForEach(Array(InlineRenderer.segments(inlines).enumerated()), id: \.offset) { _, segment in
-                    switch segment {
+                ForEach(segments.indices, id: \.self) { index in
+                    switch segments[index] {
                     case let .text(nodes):
                         if nodes.contains(where: hasVisibleText) {
                             MarkdownTextView(nodes: nodes)
                                 .font(.body)
                                 .foregroundStyle(.primary)
                         }
-                    case let .image(source, alt):
-                        MarkdownImageView(source: source, alt: alt, destination: nil)
-                    case let .linkedImage(source, alt, destination):
-                        MarkdownImageView(source: source, alt: alt, destination: destination)
+                    case let .image(source):
+                        MarkdownImageView(source: source, destination: nil)
+                    case let .linkedImage(source, destination):
+                        MarkdownImageView(source: source, destination: destination)
                     }
                 }
             }

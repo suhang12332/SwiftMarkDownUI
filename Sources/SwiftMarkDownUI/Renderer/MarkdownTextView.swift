@@ -4,12 +4,8 @@ import SwiftUI
 ///
 /// `MarkdownTextView` uses ``InlineRenderer`` to convert ``InlineNode`` values
 /// into a styled `AttributedString`, then displays it using SwiftUI's `Text`.
-struct MarkdownTextView: View, Equatable {
+struct MarkdownTextView: View {
     let nodes: [InlineNode]
-
-    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.nodes == rhs.nodes
-    }
 
     var body: some View {
         Text(InlineRenderer.render(nodes))
