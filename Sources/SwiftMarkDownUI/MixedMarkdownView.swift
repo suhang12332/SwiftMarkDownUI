@@ -12,8 +12,9 @@ import SwiftUI
 ///
 ///     MixedMarkdownView("<h1>Hello</h1><p>World</p>")
 ///
-/// The view supports text selection and automatically clears its state when
-/// removed from the view hierarchy.
+/// The content can change over time; the view re-renders when it does. It
+/// supports text selection and automatically clears its state when removed from
+/// the view hierarchy.
 public struct MixedMarkdownView: View {
     let content: String
 
@@ -30,14 +31,18 @@ public struct MixedMarkdownView: View {
         MarkdownRenderer(blocks: blocks)
             .padding(.vertical, 4)
             .textSelection(.enabled)
-            .onAppear {
-                // Convert HTML to Markdown, then parse into an AST.
-                let md = H2MD.convert(content)
-                blocks = ASTConverter.convert(Document(parsing: md))
+            .task(id: content) {
+                render(content)
             }
             .onDisappear {
                 // Release parsed blocks when the view disappears.
                 blocks = []
             }
+    }
+
+    private func render(_ content: String) {
+        // Convert HTML to Markdown, then parse into an AST.
+        let markdown = H2MD.convert(content)
+        blocks = ASTConverter.convert(Document(parsing: markdown))
     }
 }

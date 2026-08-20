@@ -35,5 +35,8 @@ let package = Package(
         .testTarget(
             name: "C_h2mdTests",
             dependencies: ["C_h2md"]),
+        .testTarget(
+            name: "SwiftMarkDownUITests",
+            dependencies: ["SwiftMarkDownUI"]),
     ]
 )

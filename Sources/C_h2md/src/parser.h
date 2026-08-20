@@ -23,6 +23,7 @@ typedef struct {
     int       list_stack_top;
     int       in_blockquote;
     int       in_table;
+    int       ignore_depth;
     int       table_row_count;
     int       in_first_row;
     int       table_col_count;
@@ -41,6 +42,8 @@ typedef struct {
     int       alt_len;
     char      lang[64];
     int       lang_len;
+    char      data_url[256];
+    int       data_url_len;
     /* Saved href for <a> tags (only href is saved, not src/alt/lang) */
     char      saved_href[256];
     int       saved_href_len;

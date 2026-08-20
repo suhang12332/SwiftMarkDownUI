@@ -7,6 +7,13 @@ import SwiftUI
 struct ListView: View {
     let ordered: Bool
     let items: [ListItemNode]
+    let depth: Int
+
+    init(ordered: Bool, items: [ListItemNode], depth: Int = 0) {
+        self.ordered = ordered
+        self.items = items
+        self.depth = depth
+    }
 
     /// Bullet characters used for unordered lists at increasing nesting depths.
     private let bullets = ["•", "◦", "■"]
@@ -19,7 +26,7 @@ struct ListView: View {
                     index: index,
                     item: item,
                     depth: 0,
-                    bullets: bullets
+                    bullets: bullets,
                 )
             }
         }
@@ -60,12 +67,12 @@ private struct ListItemRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 ForEach(Array(item.content.enumerated()), id: \.offset) { _, block in
                     switch block {
-                    case .paragraph(let inlines):
+                    case let .paragraph(inlines):
                         MarkdownTextView(nodes: inlines)
-                    .font(.body)
-                    case .list(let childOrdered, let childItems):
+                            .font(.body)
+                    case let .list(childOrdered, childItems):
                         // Recursively render nested lists with increased depth.
-                        ListView(ordered: childOrdered, items: childItems)
+                        ListView(ordered: childOrdered, items: childItems, depth: depth + 1)
                     default:
                         MarkdownRenderer(blocks: [block])
                     }
