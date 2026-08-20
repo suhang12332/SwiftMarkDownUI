@@ -29,5 +29,10 @@ struct TimeoutAsyncImage: View {
                 EmptyView()
             }
         }
+        .onDisappear {
+            URLCache.shared.removeCachedResponse(
+                for: URLRequest(url: url),
+            )
+        }
     }
 }
