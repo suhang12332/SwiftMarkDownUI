@@ -11,7 +11,14 @@ struct TimeoutAsyncImage: View {
         AsyncImage(url: url, transaction: Transaction(animation: nil)) { phase in
             switch phase {
             case let .success(image):
-                image
+                ViewThatFits(in: .horizontal) {
+                    image
+                    image
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFit()
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             case .empty:
                 ProgressView()
                     .controlSize(.small)
