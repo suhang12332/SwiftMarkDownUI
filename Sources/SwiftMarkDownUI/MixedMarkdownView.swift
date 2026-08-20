@@ -31,8 +31,8 @@ public struct MixedMarkdownView: View {
             .padding(.vertical, 4)
             .textSelection(.enabled)
             .task(id: content) {
-                // Convert supported HTML to Markdown, then parse into an AST.
-                let md = HTMLToMarkdownConverter.convertIfNeeded(content)
+                // Convert HTML to Markdown with the package's C parser, then parse into an AST.
+                let md = H2MD.convert(content)
                 blocks = ASTConverter.convert(Document(parsing: md))
             }
             .onDisappear {

@@ -79,8 +79,8 @@ struct MarkdownRenderer: View {
             TableView(headers: headers, alignments: alignments, rows: rows)
         case .thematicBreak:
             ThematicBreakView()
-        case .html:
-            EmptyView()
+        case let .html(html):
+            HTMLBlockView(html: html)
         }
     }
 
