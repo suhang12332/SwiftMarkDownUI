@@ -114,7 +114,8 @@ enum {
     TAG_IFRAME, TAG_VIDEO, TAG_EMBED, TAG_OBJECT,
     TAG_UL, TAG_OL, TAG_LI,
     TAG_BLOCKQUOTE, TAG_TABLE, TAG_TR, TAG_TH, TAG_TD,
-    TAG_CENTER, TAG_DETAILS, TAG_SUMMARY,
+    TAG_CENTER, TAG_DETAILS, TAG_SUMMARY, TAG_BUTTON, TAG_FIGURE,
+    TAG_FIGCAPTION, TAG_AUDIO, TAG_SCRIPT, TAG_STYLE, TAG_SVG,
 };
 
 #define TAG_TABLE_SIZE 64
@@ -141,6 +142,9 @@ static const tag_entry tag_table_data[] = {
     {"table", TAG_TABLE, 5}, {"tr", TAG_TR, 2},
     {"th", TAG_TH, 2}, {"td", TAG_TD, 2},
     {"center", TAG_CENTER, 6}, {"details", TAG_DETAILS, 7}, {"summary", TAG_SUMMARY, 7},
+    {"button", TAG_BUTTON, 6}, {"figure", TAG_FIGURE, 6},
+    {"figcaption", TAG_FIGCAPTION, 10}, {"audio", TAG_AUDIO, 5},
+    {"script", TAG_SCRIPT, 6}, {"style", TAG_STYLE, 5}, {"svg", TAG_SVG, 3},
 };
 
 #define NUM_TAG_ENTRIES (sizeof(tag_table_data) / sizeof(tag_table_data[0]))
@@ -278,6 +282,17 @@ static void flush_raw(h2md_parser *p, const char *start, const char *end) {
 
 /* Append text with entity decoding (for non-pre/code contexts) */
 static void append_text_decoded(h2md_parser *p, const char *s, int len) {
+    if (p->ignore_depth > 0) return;
+    if (p->in_table) {
+        int whitespace_only = 1;
+        for (int i = 0; i < len; i++) {
+            if (!isspace((unsigned char)s[i])) {
+                whitespace_only = 0;
+                break;
+            }
+        }
+        if (whitespace_only) return;
+    }
     int i = 0;
     while (i < len) {
         if (s[i] == '&') {
@@ -315,8 +330,8 @@ static void extract_all_attrs(h2md_parser *p) {
     int alen = p->attr_len;
     
     /* Reset all output lengths */
-    p->href_len = 0; p->src_len = 0; p->alt_len = 0; p->lang_len = 0;
-    p->href[0] = '\0'; p->src[0] = '\0'; p->alt[0] = '\0'; p->lang[0] = '\0';
+    p->href_len = 0; p->src_len = 0; p->alt_len = 0; p->lang_len = 0; p->data_url_len = 0;
+    p->href[0] = '\0'; p->src[0] = '\0'; p->alt[0] = '\0'; p->lang[0] = '\0'; p->data_url[0] = '\0';
     
     for (int i = 0; i < alen; i++) {
         /* Skip whitespace */
@@ -353,6 +368,11 @@ static void extract_all_attrs(h2md_parser *p) {
                    tolower((unsigned char)attrs[i+4]) == 's') {
             out = p->lang; out_len = &p->lang_len; max_out = (int)sizeof(p->lang);
             i += 5;
+        } else if (!prev_is_word && i + 8 < alen &&
+                   tolower((unsigned char)attrs[i]) == 'd' &&
+                   strncasecmp(attrs + i, "data-url", 8) == 0) {
+            out = p->data_url; out_len = &p->data_url_len; max_out = (int)sizeof(p->data_url);
+            i += 8;
         } else {
             /* Skip unknown attribute */
             while (i < alen && attrs[i] != '=') i++;
@@ -430,14 +450,45 @@ static int has_gif_ext(const char *s, int len) {
     return 0;
 }
 
-static int has_svg_ext(const char *s, int len) {
-    if (len < 4) return 0;
-    char c3 = (char)tolower((unsigned char)s[len-3]);
-    char c2 = (char)tolower((unsigned char)s[len-2]);
-    char c1 = (char)tolower((unsigned char)s[len-1]);
-    if (s[len-4] == '.' && c3 == 's' && c2 == 'v' && c1 == 'g') return 1;
-    if (len >= 18 && memcmp(s, "data:image/svg+xml", 18) == 0) return 1;
-    return 0;
+static const char *find_closing_tag(const char *s, const char *end, const char *name, int name_len) {
+    for (const char *p = s; p + name_len + 3 <= end; p++) {
+        if (p[0] != '<' || p[1] != '/') continue;
+        int match = 1;
+        for (int i = 0; i < name_len; i++) {
+            if (tolower((unsigned char)p[i + 2]) != tolower((unsigned char)name[i])) {
+                match = 0;
+                break;
+            }
+        }
+        if (match && (p[name_len + 2] == '>' || isspace((unsigned char)p[name_len + 2]))) {
+            return p;
+        }
+    }
+    return NULL;
+}
+
+static const char *closing_tag_end(const char *start, const char *end) {
+    const char *close = memchr(start, '>', (size_t)(end - start));
+    return close ? close + 1 : end;
+}
+
+static int emit_raw_container(h2md_parser *p, int tag, const char *after_open, const char *end) {
+    const char *name = tag == TAG_SVG ? "svg" : "details";
+    int name_len = tag == TAG_SVG ? 3 : 7;
+    const char *close = find_closing_tag(after_open, end, name, name_len);
+    if (!close) return 0;
+
+    ensure_blocksep(p);
+    h2md_buf_append_str(p->buf, "<");
+    h2md_buf_append(p->buf, name, (size_t)name_len);
+    if (p->attr_len > 0) h2md_buf_append(p->buf, p->attr_buf, (size_t)p->attr_len);
+    h2md_buf_append_char(p->buf, '>');
+    h2md_buf_append(p->buf, after_open, (size_t)(close - after_open));
+    const char *close_end = closing_tag_end(close, end);
+    h2md_buf_append(p->buf, close, (size_t)(close_end - close));
+    h2md_buf_append_str(p->buf, "\n\n");
+    p->need_blocksep = 0;
+    return (int)(close_end - after_open);
 }
 
 static int has_video_ext(const char *s, int len) {
@@ -473,6 +524,12 @@ static void process_open_tag(h2md_parser *p) {
 
     int tag = tag_lookup(name, len);
 
+    if (tag == TAG_SCRIPT || tag == TAG_STYLE) {
+        p->ignore_depth++;
+        return;
+    }
+    if (p->ignore_depth > 0) return;
+
     switch (tag) {
     case TAG_H1: case TAG_H2: case TAG_H3:
     case TAG_H4: case TAG_H5: case TAG_H6: {
@@ -484,11 +541,12 @@ static void process_open_tag(h2md_parser *p) {
         return;
     }
     case TAG_P: case TAG_DIV: case TAG_CENTER: case TAG_DETAILS: case TAG_SUMMARY:
+    case TAG_FIGURE: case TAG_FIGCAPTION:
         ensure_blocksep(p);
         p->need_blocksep = 1;
         return;
     case TAG_BR:
-        ensure_newline(p);
+        h2md_buf_append_str(p->buf, "  \n");
         return;
     case TAG_B: case TAG_STRONG:
         h2md_buf_append_str(p->buf, "**");
@@ -505,11 +563,16 @@ static void process_open_tag(h2md_parser *p) {
         p->in_link = 1;
         h2md_buf_append_char(p->buf, '[');
         return;
+    case TAG_BUTTON:
+        memcpy(p->saved_href, p->data_url, (size_t)p->data_url_len + 1);
+        p->saved_href_len = p->data_url_len;
+        p->in_link = 1;
+        h2md_buf_append_char(p->buf, '[');
+        return;
     case TAG_IMG:
         if (p->src_len > 0 && !has_gif_ext(p->src, p->src_len)) {
             const char *label = p->alt_len > 0 ? p->alt : "image";
-            int is_svg = has_svg_ext(p->src, p->src_len);
-            if (!is_svg) h2md_buf_append_char(p->buf, '!');
+            h2md_buf_append_char(p->buf, '!');
             h2md_buf_append_char(p->buf, '[');
             h2md_buf_append(p->buf, label, (size_t)p->alt_len ? (size_t)p->alt_len : 5);
             h2md_buf_append_str(p->buf, "](");
@@ -548,6 +611,17 @@ static void process_open_tag(h2md_parser *p) {
         }
         return;
     case TAG_VIDEO: case TAG_EMBED: case TAG_OBJECT:
+        return;
+    case TAG_AUDIO:
+        if (p->src_len > 0) {
+            ensure_blocksep(p);
+            h2md_buf_append_str(p->buf, "[Audio](");
+            h2md_buf_append(p->buf, p->src, (size_t)p->src_len);
+            h2md_buf_append_str(p->buf, ")\n");
+            p->need_blocksep = 1;
+        }
+        return;
+    case TAG_SVG:
         return;
     case TAG_UL:
         if (p->list_stack_top < MAX_LIST_DEPTH) {
@@ -588,6 +662,7 @@ static void process_open_tag(h2md_parser *p) {
         return;
     case TAG_TABLE:
         ensure_blocksep(p);
+        ensure_newline(p);
         p->in_table = 1;
         p->table_row_count = 0;
         p->table_col_count = 0;
@@ -599,7 +674,11 @@ static void process_open_tag(h2md_parser *p) {
         p->in_first_row = (p->table_row_count == 1);
         return;
     case TAG_TH: case TAG_TD:
-        h2md_buf_append_str(p->buf, "| ");
+        if (h2md_buf_last_char(p->buf) == '\n' || h2md_buf_last_char(p->buf) == '\0') {
+            h2md_buf_append_str(p->buf, "| ");
+        } else {
+            h2md_buf_append_char(p->buf, ' ');
+        }
         if (p->table_row_count == 1) p->table_col_count++;
         return;
     default:
@@ -612,6 +691,12 @@ static void process_close_tag(h2md_parser *p) {
     int len = p->tag_name_len;
     int tag = tag_lookup(name, len);
 
+    if (tag == TAG_SCRIPT || tag == TAG_STYLE) {
+        if (p->ignore_depth > 0) p->ignore_depth--;
+        return;
+    }
+    if (p->ignore_depth > 0) return;
+
     switch (tag) {
     case TAG_H1: case TAG_H2: case TAG_H3:
     case TAG_H4: case TAG_H5: case TAG_H6:
@@ -619,6 +704,7 @@ static void process_close_tag(h2md_parser *p) {
         p->need_blocksep = 1;
         return;
     case TAG_P: case TAG_DIV: case TAG_CENTER: case TAG_DETAILS: case TAG_SUMMARY:
+    case TAG_FIGURE: case TAG_FIGCAPTION:
         ensure_newline(p);
         p->need_blocksep = 1;
         return;
@@ -631,7 +717,7 @@ static void process_close_tag(h2md_parser *p) {
     case TAG_DEL: case TAG_S:
         h2md_buf_append_str(p->buf, "~~");
         return;
-    case TAG_A:
+    case TAG_A: case TAG_BUTTON:
         h2md_buf_append_str(p->buf, "](");
         if (p->saved_href_len > 0)
             h2md_buf_append(p->buf, p->saved_href, (size_t)p->saved_href_len);
@@ -669,6 +755,7 @@ static void process_close_tag(h2md_parser *p) {
     case TAG_TABLE:
         p->in_table = 0;
         ensure_newline(p);
+        h2md_buf_append_char(p->buf, '\n');
         p->need_blocksep = 1;
         return;
     case TAG_TR:
@@ -684,7 +771,7 @@ static void process_close_tag(h2md_parser *p) {
         p->in_first_row = 0;
         return;
     case TAG_TH: case TAG_TD:
-        h2md_buf_append_char(p->buf, '|');
+        h2md_buf_append_str(p->buf, " |");
         return;
     default:
         return;
@@ -810,6 +897,16 @@ void h2md_parser_run(h2md_parser *p, const char *input) {
             if (c == '>') {
                 p->attr_buf[p->attr_len] = '\0';
                 p->in_tag = 0;
+                int raw_tag = tag_lookup(p->tag_name, p->tag_name_len);
+                if (raw_tag == TAG_SVG || raw_tag == TAG_DETAILS) {
+                    int consumed = emit_raw_container(p, raw_tag, s + 1, end);
+                    if (consumed > 0) {
+                        s += consumed + 1;
+                        text_start = s;
+                        state = ST_TEXT;
+                        continue;
+                    }
+                }
                 process_open_tag(p);
                 state = ST_TEXT;
                 s++;
@@ -836,6 +933,16 @@ void h2md_parser_run(h2md_parser *p, const char *input) {
             if (c == '>') {
                 p->attr_buf[p->attr_len] = '\0';
                 p->in_tag = 0;
+                int raw_tag = tag_lookup(p->tag_name, p->tag_name_len);
+                if (raw_tag == TAG_SVG || raw_tag == TAG_DETAILS) {
+                    int consumed = emit_raw_container(p, raw_tag, s + 1, end);
+                    if (consumed > 0) {
+                        s += consumed + 1;
+                        text_start = s;
+                        state = ST_TEXT;
+                        continue;
+                    }
+                }
                 process_open_tag(p);
                 state = ST_TEXT;
                 s++;

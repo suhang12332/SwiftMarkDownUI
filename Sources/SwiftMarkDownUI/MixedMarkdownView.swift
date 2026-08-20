@@ -31,11 +31,8 @@ public struct MixedMarkdownView: View {
         MarkdownRenderer(blocks: blocks)
             .padding(.vertical, 4)
             .textSelection(.enabled)
-            .onAppear {
+            .task(id: content) {
                 render(content)
-            }
-            .onChange(of: content) { _, newContent in
-                render(newContent)
             }
             .onDisappear {
                 // Release parsed blocks when the view disappears.
@@ -45,7 +42,7 @@ public struct MixedMarkdownView: View {
 
     private func render(_ content: String) {
         // Convert HTML to Markdown, then parse into an AST.
-        let md = H2MD.convert(content)
-        blocks = ASTConverter.convert(Document(parsing: md))
+        let markdown = H2MD.convert(content)
+        blocks = ASTConverter.convert(Document(parsing: markdown))
     }
 }
